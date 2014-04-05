@@ -3,11 +3,14 @@ package gogitlab
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 )
 
 const (
@@ -23,8 +26,24 @@ type Gitlab struct {
 }
 
 const (
-	dateLayout = "2006-01-02T15:04:05-07:00"
+	dateLayout  = "2006-01-02T15:04:05-07:00"
+	session_url = "/session" // Login to get private token
+
 )
+
+type LoginInfo struct {
+	Id           int    `json:"id,omitempty"`
+	Username     string `json:"username,omitempty"`
+	Email        string `json:"email,omitempty"`
+	Name         string `json:"name,omitempty"`
+	State        string `json:"state,omitempty"`
+	CreatedAtRow string `json:"created_at,omitempty"`
+	CreatedAt    time.Time
+	externUid    string `json:"extern_uid,omitempty"`
+	Provider     string `json:"provider,omitempty"`
+	Token        string `json:"private_token,omitempty"`
+	IsAdmin      bool   `json:"is_admin,omitempty"`
+}
 
 func NewGitlab(baseUrl, apiPath, token string) *Gitlab {
 
@@ -36,6 +55,35 @@ func NewGitlab(baseUrl, apiPath, token string) *Gitlab {
 		Token:   token,
 		Client:  client,
 	}
+}
+
+func NewGitlabByLogin(baseUrl, apiPath, username, password string) (*Gitlab, error) {
+
+	client := &http.Client{}
+	gitlab := &Gitlab{
+		BaseUrl: baseUrl,
+		ApiPath: apiPath,
+		Client:  client,
+	}
+
+	loginUrl := gitlab.BaseUrl + gitlab.ApiPath + session_url
+
+	data := url.Values{}
+	data.Set("login", username)
+	data.Add("password", password)
+
+	contents, err := gitlab.buildAndExecRequest("POST", loginUrl, []byte(data.Encode()))
+	var loginInfo *LoginInfo
+	if err != nil {
+		return nil, err
+	}
+
+	err = json.Unmarshal(contents, &loginInfo)
+	if err != nil {
+		return nil, err
+	}
+	gitlab.Token = loginInfo.Token
+	return gitlab, nil
 }
 
 func (g *Gitlab) ResourceUrl(url string, params map[string]string) string {
